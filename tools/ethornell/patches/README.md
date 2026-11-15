@@ -9,6 +9,7 @@
 3. `0003-public-storage-ofd-writer-lock.patch`：当 `flock(LOCK_EX | LOCK_NB)` 仅返回 `ENOSYS`、`EOPNOTSUPP` 或 `ENOTSUP` 时，在 Android/Linux 尝试全文件非阻塞 `F_OFD_SETLK` 写锁。忙锁、权限错误与其他失败原样拒绝；OFD 失败也拒绝。OFD 锁随宿主持有的文件描述符关闭而释放。
 4. `0005-amachoco-graph-startup-compat.patch`：仅对经资源指纹识别的 Amachoco ABI 恢复 `Graph91:00` 旧版空操作行为，避免启动时因上游未知调用处理收紧而退出；该原生调用的完整语义仍未核实。
 5. `0006-bgi-version-compat.patch` 通过 IPL 与标题双指纹，为核实过的 Cinderella 与 Pure HD 版本选择 HoukagoFd ABI、原版 16 项显示模式、128 个音效通道和主线程内存规格。PE 未检出显示表时保留资源指纹配置。保留图形文本归一化中越界整数的原有载荷，更新上游指令数量回归，并增加有界的 CBG_MT 分块图片解码及原创回归夹具。Sys80:30/31/CF 与 ModernFused 位图指针入口共用图片格式识别，MT 输入按所属分配范围解码，静态输入的正计数不再截断压缩数据，全局输入限制在全局区末端。
+6. `0007-bgi-audio-recovery.patch` 让 Android CPAL 后端合并 Oboe 关闭前后的重复错误回调，避免 Kira 单槽错误队列溢出，保留混音器重建输出，失败时每 250ms 重试。声音控制入口清理已结束的静态与流式播放句柄，防止渐变轮询塞满已停止消费的命令队列。回归覆盖终态控制与重新播放。
 
 历史补丁 `0004-virtual-user-file-reads.patch` 仅用于旧基线；新版上游已实现虚拟根与存档读取映射，不再应用该补丁。
 
@@ -20,6 +21,7 @@ git apply /path/to/TyranorNext/tools/ethornell/patches/0002-game-local-savedata.
 git apply /path/to/TyranorNext/tools/ethornell/patches/0003-public-storage-ofd-writer-lock.patch
 git apply /path/to/TyranorNext/tools/ethornell/patches/0005-amachoco-graph-startup-compat.patch
 git apply /path/to/TyranorNext/tools/ethornell/patches/0006-bgi-version-compat.patch
+git apply /path/to/TyranorNext/tools/ethornell/patches/0007-bgi-audio-recovery.patch
 cargo test -p ethornell-app --locked
 cargo test -p ethornell-image --locked
 cargo test -p ethornell-script --locked
@@ -94,3 +96,9 @@ python3 tools/ethornell/verify_provenance.py --local-static \
 | `onenight-final-name.png` | `1b3867115cf2f3a00b433e4a255bcbbf717db75c1c12da0b14889e80e14b55a8` |
 | `onenight-final-body.png` | `d837e7f96e08f02043575989dbd3ca78b8095e68c90808d817493989903643a7` |
 | `onenight-final-library.txt` | `4426119fa7cd3ee574b91023ee940d81b82910cb54dca82ce4edef11ad6b741e` |
+
+## 音频恢复验证
+
+2026-11-16 同步启动审核修正后，当前音频阶段运行库为 `7c9296d0f3623ebfb0aa5f62547720c54b3be9203ef9c80f370ab6cecf349e78`，26,760,800 字节。六份补丁与 409 项来源清单同步更新，ARM64 / API 26 锁定依赖构建和 ELF/ABI 静态校验通过。该阶段新产物的独立真机音频恢复仍待复验。
+
+历史候选 `772ba49fefe70a7408accf446b57f5c0d2d9b226666047f254efbb6b58def4f0` 已在 iQOO 12（Android 15 / API 35）通过三个启动样本与普通 PURExCONNECT 的标题到正文流程，《一夜之后》体验版越过原队列满位置。静态和流式终态回归移除修复时失败，恢复后通过，原音频模块 21 项通过、2 项忽略。AAudio 实际断连恢复记录属于先行候选 `0fa9e6be…`。完整源码 APK、长时间听感及跨设备验证仍待完成。
