@@ -61,11 +61,26 @@
         "crates/ethornell-image/src/cbg/mt.rs": "cb607caca40fd0e4822f00e1ea5a5971ea27882f78ee40033add17af8a3a0394"
       },
       "applies_after": "tools/ethornell/patches/0005-amachoco-graph-startup-compat.patch"
+    },
+    {
+      "path": "tools/ethornell/patches/0007-bgi-audio-recovery.patch",
+      "sha256": "d92d8b5a2498654b29d8100ecad2411071ff0a1d925e56965802284ade70b900",
+      "target_source_file": "crates/ethornell-audio/src/lib.rs",
+      "target_file_sha256": "df2f1daafb5f98df014518250a0472421491094878a8659c4487457f98992656",
+      "base_revision": "a6c925e566f6bc1f7d60ab31afaec1d04dbfa8ab",
+      "reason": "Coalesce duplicate Android audio disconnect callbacks and retry stream recovery while retaining the mixer. Discard terminal playback handles before fade and control commands can fill an unconsumed queue.",
+      "target_source_file_sha256": {
+        "Cargo.lock": "982034e1a2bafb81b7dd84f8b4328ac8975daeffa06083ed2e2da781140f5a8a",
+        "crates/ethornell-audio/Cargo.toml": "b501bc649903755e83a00709af28f48ede39a0b138df97f18e8e797af7419677",
+        "crates/ethornell-audio/src/lib.rs": "df2f1daafb5f98df014518250a0472421491094878a8659c4487457f98992656",
+        "crates/ethornell-audio/src/android.rs": "efbb8079ae1954bc1873b0d4d81568fa376871da3c6cb7361efa0d31393670a6"
+      },
+      "applies_after": "tools/ethornell/patches/0006-bgi-version-compat.patch"
     }
   ],
   "source_inventory_policy": "cargo-workspace-build-inputs-v1",
-  "source_inventory_sha256": "734f85a10cbbb60abaab57858d4e3dad815380eaf3a9de65390d6e40924a8ec5",
-  "source_inventory_file_count": 408,
+  "source_inventory_sha256": "56751142185c5014009b92ddaba1a2fdc0d9952104f618b873b85442b5b24912",
+  "source_inventory_file_count": 409,
   "source_file_sha256": {
     ".cargo/config.toml": "6901a0456153bc20219ef29bc261424f659a68307018f289704b8129f50c0035",
     ".github/workflows/release.yml": "d28d3b2f9f236d8dd2bbecab8b139ec91fcd1e5f2f78274bfa3c476325f66e35",
@@ -73,7 +88,7 @@
     ".github/workflows/switch-image.yml": "6291c3245d18f824f34b04e50481b7610ab216baa185dbd9a22bd1323fc439eb",
     ".github/workflows/vita-image.yml": "01871a04b24ec063ad09217b1059f746bd7871beb9f031f474403882457ade3c",
     ".gitignore": "b1a5ccd9cb076f172d249c47f6f1695404f27206aaecef959a35b6aec0d98cfc",
-    "Cargo.lock": "e9360f0cbf0a7ba11385d55f547eaed75b8117a39cf97008f7f197d6fe2f4a21",
+    "Cargo.lock": "982034e1a2bafb81b7dd84f8b4328ac8975daeffa06083ed2e2da781140f5a8a",
     "Cargo.toml": "8927c3169cb59cd15729c539a477970682dd012d5efdc396b193e18e96146245",
     "README.md": "5b02f12d08ef09713f20fd9bddc19820d0741a34ce99b4d75d3fde39f15a4b57",
     "crates/ethornell-app/.ethornell-platform-store": "164321466e7b57262d55d044e45fd9fe7e41539b64a52c8b5a9486b047f33c9b",
@@ -172,8 +187,9 @@
     "crates/ethornell-archive/Cargo.toml": "cc1f1a76c1ca72bb5b2a257474023e90c15f0641f497a89927a305241e825d3c",
     "crates/ethornell-archive/src/lib.rs": "acc72e93502f732a3c26340ccea4756254e17c538ee72b75a7ae13f58eb9299a",
     "crates/ethornell-archive/src/localized.rs": "8b3c576a8c6bdec336635a4aa61ef5ac77eedba9154ce90602506dbe923f288e",
-    "crates/ethornell-audio/Cargo.toml": "25a4147b125a7284936e4887b10e2800db9c7f6440444637d04e00fb863041b7",
-    "crates/ethornell-audio/src/lib.rs": "a5cda9f4e038da3082c94784973772a6df7b824b10f9bf892abe27f05f479fda",
+    "crates/ethornell-audio/Cargo.toml": "b501bc649903755e83a00709af28f48ede39a0b138df97f18e8e797af7419677",
+    "crates/ethornell-audio/src/android.rs": "efbb8079ae1954bc1873b0d4d81568fa376871da3c6cb7361efa0d31393670a6",
+    "crates/ethornell-audio/src/lib.rs": "df2f1daafb5f98df014518250a0472421491094878a8659c4487457f98992656",
     "crates/ethornell-audio/src/pump.rs": "87a6a01e68b656362600e61da2b89a303e9c4441797a8a1ff813a2cb512c4d01",
     "crates/ethornell-audio/src/resample.rs": "46561293974e9b999e1f185358c2a1e3fd6be03823120681116d78ff8e82923b",
     "crates/ethornell-audio/src/streamed.rs": "3d8451799549001c95f311ca565867cec67110fdedabdafe73fadc068deda14e",
@@ -476,20 +492,20 @@
     "src/tools/show_selector.py": "c001aecf00cc3c4cf846c303179774ee0479c3df8a0aa8a87f7f164dde145e33",
     "src/tools/vtable.py": "8f770812990c1676f3078a988b21b7e2cdcbc06e8dba5ebbbf978844e02d3560"
   },
-  "cargo_lock_sha256": "e9360f0cbf0a7ba11385d55f547eaed75b8117a39cf97008f7f197d6fe2f4a21",
+  "cargo_lock_sha256": "982034e1a2bafb81b7dd84f8b4328ac8975daeffa06083ed2e2da781140f5a8a",
   "crate_package": "ethornell-mobile",
   "crate_artifact": "libethornell_mobile.so",
   "packaged_name": "libethornell.so",
   "build_command": "Windows NDK 28.0.13004108; CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=clang.exe; CC_aarch64_linux_android=aarch64-linux-android26-clang.cmd; CXX_aarch64_linux_android=aarch64-linux-android26-clang++.cmd; AR_aarch64_linux_android=llvm-ar.exe; CARGO_BUILD_JOBS=8; CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS=\"-C link-arg=--target=aarch64-linux-android26 -C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=-Wl,-z,common-page-size=16384 -C link-arg=-Wl,-z,relro -C link-arg=-Wl,-z,now -C link-arg=-Wl,--no-undefined\"; cargo +1.96.0 build -p ethornell-mobile --target aarch64-linux-android --release --locked; llvm-strip --strip-unneeded -o libethornell.so libethornell_mobile.so",
   "build_log": "build.log",
-  "build_log_sha256": "39646ae867b1c462fd1f25f18c74e48ee74d194c83d9f73bd4faed82866b3637",
-  "build_time_utc": "2026-11-15T15:28:29.838856+00:00",
-  "library_sha256": "71785654916edc5b5a6d6f197fe776f3777b3f6177d3d0eaed4bcb2f22fa8a61",
-  "library_bytes": 26738496,
+  "build_log_sha256": "70ec66f08adae5411774fe17c1e74f75a7a721c127d26132941633f95895188c",
+  "build_time_utc": "2026-11-15T15:30:13.037381+00:00",
+  "library_sha256": "772ba49fefe70a7408accf446b57f5c0d2d9b226666047f254efbb6b58def4f0",
+  "library_bytes": 26760992,
   "build_verification": {
-    "source_state": "a6c925e566f6bc1f7d60ab31afaec1d04dbfa8ab plus 0001, 0002, 0003, 0005, 0006",
+    "source_state": "a6c925e566f6bc1f7d60ab31afaec1d04dbfa8ab plus 0001, 0002, 0003, 0005, 0006, 0007",
     "embedded_source_revision_verified": "a6c925e566f6bc1f7d60ab31afaec1d04dbfa8ab",
     "strict_source_verification": false,
-    "local_patches_applied": 5
+    "local_patches_applied": 6
   }
 }
