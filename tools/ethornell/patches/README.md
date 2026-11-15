@@ -8,7 +8,7 @@
 2. `0002-game-local-savedata.patch`：允许经过文件描述符与 inode 校验的 `<resource>/savedata` 直接子目录作为 user-root；该子树不参与普通资源读取、存在性检查、枚举和资源扫描。其它重叠根及符号链接仍拒绝，分离的 user-root 继续供 JNI 回归夹具使用。
 3. `0003-public-storage-ofd-writer-lock.patch`：当 `flock(LOCK_EX | LOCK_NB)` 仅返回 `ENOSYS`、`EOPNOTSUPP` 或 `ENOTSUP` 时，在 Android/Linux 尝试全文件非阻塞 `F_OFD_SETLK` 写锁。忙锁、权限错误与其他失败原样拒绝；OFD 失败也拒绝。OFD 锁随宿主持有的文件描述符关闭而释放。
 4. `0005-amachoco-graph-startup-compat.patch`：仅对经资源指纹识别的 Amachoco ABI 恢复 `Graph91:00` 旧版空操作行为，避免启动时因上游未知调用处理收紧而退出；该原生调用的完整语义仍未核实。
-5. `0006-bgi-version-compat.patch` 通过 IPL 与标题双指纹，为核实过的 Cinderella 与 Pure HD 版本选择 HoukagoFd ABI、原版 16 项显示模式、128 个音效通道和主线程内存规格。PE 未检出显示表时保留资源指纹配置。保留图形文本归一化中越界整数的原有载荷，更新上游指令数量回归，并增加有界的 CBG_MT 分块图片解码及原创回归夹具。
+5. `0006-bgi-version-compat.patch` 通过 IPL 与标题双指纹，为核实过的 Cinderella 与 Pure HD 版本选择 HoukagoFd ABI、原版 16 项显示模式、128 个音效通道和主线程内存规格。PE 未检出显示表时保留资源指纹配置。保留图形文本归一化中越界整数的原有载荷，更新上游指令数量回归，并增加有界的 CBG_MT 分块图片解码及原创回归夹具。Sys80:30/31/CF 与 ModernFused 位图指针入口共用图片格式识别，MT 输入按所属分配范围解码。
 6. `0007-bgi-audio-recovery.patch` 让 Android CPAL 后端合并 Oboe 关闭前后的重复错误回调，避免 Kira 单槽错误队列溢出，保留混音器重建输出，失败时每 250ms 重试。声音控制入口清理已结束的静态与流式播放句柄，防止渐变轮询塞满已停止消费的命令队列。回归覆盖终态控制与重新播放。
 
 历史补丁 `0004-virtual-user-file-reads.patch` 仅用于旧基线；新版上游已实现虚拟根与存档读取映射，不再应用该补丁。
@@ -26,10 +26,9 @@ cargo test -p ethornell-app --locked
 cargo test -p ethornell-image --locked
 cargo test -p ethornell-script --locked
 cargo test -p ethornell-vm --locked
-cargo test -p ethornell-audio --locked
 ```
 
-补丁顺序必须与 provenance 的 `local_patches` 一致，每份补丁后的源码哈希应与下一份补丁的输入对应。多文件补丁的 `target_source_file_sha256` 记录各目标文件的结果，source inventory 覆盖全部构建输入、依赖锁文件及新增的 `crates/ethornell-image/src/cbg/mt.rs` 和 `crates/ethornell-audio/src/android.rs`。
+补丁顺序必须与 provenance 的 `local_patches` 一致，每份补丁后的源码哈希应与下一份补丁的输入对应。多文件补丁的 `target_source_file_sha256` 记录各目标文件的结果，source inventory 覆盖全部构建输入、依赖锁文件及新增的 `crates/ethornell-image/src/cbg/mt.rs`。
 
 锁回归应分别覆盖不支持操作与锁占用错误、同进程独立文件描述符及跨进程互斥、关闭和进程异常退出后的释放；公共共享存储必须单独测试，不能以应用专属外部目录替代。
 
@@ -49,14 +48,40 @@ python3 tools/ethornell/verify_provenance.py --local-static \
 
 ## 启动兼容验证
 
-本阶段运行库 SHA-256 为 `71785654916edc5b5a6d6f197fe776f3777b3f6177d3d0eaed4bcb2f22fa8a61`，26,738,496 字节。固定上游提交加五份补丁，来源清单为 408 项。Android ARM64 构建和测试 APK 内实际库字节校验通过。测试 APK 基于 Tyranor Next 1.65 替换运行库资产。
+2026-11-16 复验运行库 SHA-256 为 `84376203015d1bbb0294dd5cbc3b80ac84d81d8b352e7560a4aba1306fb7bfb4`，26,738,304 字节。固定上游提交加五份补丁，来源清单为 408 项，整条补丁链重放后的文件逐字节匹配构建源码。Android ARM64 / API 26 构建、ELF/ABI、16KB 对齐及 APK 内库字节校验通过，`release_ready=false`。
 
-在 iQOO 12（vivo V2307A，Android 15 / API 35，ARM64）上已用原版 1.65 复现三个样本的启动错误。此前包含相同启动补丁和后续音频修复的候选 `772ba49f…` 在《放课后的灰姑娘女孩》《ピュア×コネクト フルHDリマスター》《一夜之后》体验版通过标题到正文流程，普通版 PURExCONNECT 通过标题、姓名确认和对白。此前图片模块 26 项回归通过。该真机记录属于历史候选，本阶段新构建的库尚待真机复验。
+测试设备为 iQOO 12（vivo V2307A，Android 15 / API 35，ARM64，4KB 页）。测试 APK 基于原版 Tyranor Next 1.65 替换运行库资产并以隔离包 `com.tyranor.test` 安装。第一轮启用测试 APK 的 debuggable 属性以读取解压库 SHA-256 与宿主 `/proc/<pid>/maps`，确认实际映射到 `files/engine_runtime/ethornell/libethornell.so`，哈希与本次产物一致。之后使用相同库的非 debuggable 测试 APK 运行原生探针。
 
-原版报错位置及 CBG_MT 回归输出见 [Issue #175](https://github.com/Weiss-UltimateSavior/Tyranor-Next/issues/175)。完整当前源码 APK 与严格来源验收尚待验证。
+| 样本 | 本轮观察 |
+| --- | --- |
+| 放课后的灰姑娘女孩 | 冷启动到标题，Start 后进入街景与室内对白，点击推进 |
+| ピュア×コネクト フルHDリマスター | 冷启动到标题，New Game、默认姓名确认后进入对白，点击推进 |
+| 一夜之后体验版 | 冷启动后进入开场动态场景与ナナ对白，用户确认测试成功 |
+
+启动范围内仍有动态场景卡顿。音频恢复和渲染性能分别由后续独立补丁处理。原版三个样本的错误位置与日志见 [Issue #175](https://github.com/Weiss-UltimateSavior/Tyranor-Next/issues/175)。
+
+本轮回归结果如下。
+
+- `cargo +1.96.0 test -p ethornell-app -p ethornell-image -p ethornell-script -p ethornell-vm --lib --target x86_64-pc-windows-gnu --locked` 分别通过 532、26、29、357 项，共 944 项，11 项按既有条件忽略。
+- 四个新增 VM 回归覆盖 Sys80:30 归档读取、Sys80:31 解码后切片、Sys80:CF 内存解码和 ModernFused 短计数位图注册，断言完整图片描述头、像素和返回值。恢复旧分派条件后四项全部失败，修正后全部通过。
+- 仓库 `EthornellReleaseInstrumentation` 源码单独编译为框架探针，使用仓库 C++ probe 和生产 ABI header。SJIS、GBK 各 3/3，通过非 debuggable 目标身份、RTLD_NOW / 15 导出 / ABI / build_info，以及生产 JNI create/poll/destroy、无效 token 与请求校验。编译专用 API stub 未进入测试 DEX，目标生产类来自目标 APK。该探针只覆盖加载和会话创建范围。
+- `python -m unittest discover -s tools/ethornell/tests` 在 UTF-8 与 `core.autocrlf=false` 环境下为 78 通过、1 跳过、1 失败。失败为既有 Windows 文本夹具写入 CRLF 后与 LF 常量比较 header SHA-256，当前改动未修改该工具或夹具。
+- 两份独立只读审核核对分派逻辑、旧 CBG/DSC 回归风险、补丁重放与来源哈希，均无阻断发现。
+
+完整当前源码 APK、AndroidX 设备测试、Surface/暂停/存档全套回归、API 26 / 16KB 设备及长稳尚未完成。本机 Gradle 在补齐 JDK 17 后仍无法识别已解压的 `android-37.0` 平台，故使用上述原有框架探针单独复验，未把历史设备通过数计入本轮。Android CLI 审查工具和适用技能在本会话未发现，设备操作使用 ADB。
+
+本地证据的 SHA-256 如下，原始商业游戏截图保留在本地。
+
+| 证据 | SHA-256 |
+| --- | --- |
+| `cinderella-body.png` | `cef211390924ea731615548a319dd617064d0733d08eb62b8b5e618918fdfd09` |
+| `pure-body.png` | `0718fc368661561af3a84631bb8677299255f58e9eb53cca3dda8c79f568aeb2` |
+| `onenight-title2.png` | `adaccc146c7889f136b4e4c1ef4d7472f463028bfd4381bfddce9e613dc38afb` |
+| `probe-sjis.log` | `96370c7fe858ab8afe8dea0e5d0b5e4509ec53ec10a4353cc0199f061486f67c` |
+| `probe-gbk.log` | `96370c7fe858ab8afe8dea0e5d0b5e4509ec53ec10a4353cc0199f061486f67c` |
 
 ## 音频恢复验证
 
-本阶段运行库 SHA-256 为 `772ba49fefe70a7408accf446b57f5c0d2d9b226666047f254efbb6b58def4f0`，26,760,992 字节，来源清单为 409 项。Android ARM64 构建和测试 APK 内实际库字节校验通过。
+2026-11-16 同步启动审核修正后，当前音频阶段运行库为 `4d86eb769b38de8bab634d5d9a5a305105aa3869fce334581299b9da10084fa3`，26,760,800 字节。六份补丁与 409 项来源清单同步更新，ARM64 / API 26 锁定依赖构建和 ELF/ABI 静态校验通过。该阶段新产物的独立真机音频恢复仍待复验。
 
-在 iQOO 12（vivo V2307A，Android 15 / API 35）上，历史候选 `0fa9e6be…` 的 Full HD 样本两次触发 AAudio 断连，输出依次重建并继续对白。候选 `772ba49f…` 在《一夜之后》越过原队列满位置。已结束静态与流式句柄的宿主回归移除修复后均失败，恢复修复后通过。本阶段重建的运行库与候选 `772ba49f…` 字节一致。两次系统断连恢复的直接证据来自先行候选 `0fa9e6be…`，本库此前的两次锁屏未再次触发系统断连。详见 [Issue #176](https://github.com/Weiss-UltimateSavior/Tyranor-Next/issues/176)。
+历史候选 `772ba49fefe70a7408accf446b57f5c0d2d9b226666047f254efbb6b58def4f0` 已在 iQOO 12（Android 15 / API 35）通过三个启动样本与普通 PURExCONNECT 的标题到正文流程，《一夜之后》体验版越过原队列满位置。静态和流式终态回归移除修复时失败，恢复后通过，原音频模块 21 项通过、2 项忽略。AAudio 实际断连恢复记录属于先行候选 `0fa9e6be…`。完整源码 APK、长时间听感及跨设备验证仍待完成。
