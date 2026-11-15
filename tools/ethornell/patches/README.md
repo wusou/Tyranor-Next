@@ -10,6 +10,7 @@
 4. `0005-amachoco-graph-startup-compat.patch`：仅对经资源指纹识别的 Amachoco ABI 恢复 `Graph91:00` 旧版空操作行为，避免启动时因上游未知调用处理收紧而退出；该原生调用的完整语义仍未核实。
 5. `0006-bgi-version-compat.patch` 通过 IPL 与标题双指纹，为核实过的 Cinderella 与 Pure HD 版本选择 HoukagoFd ABI、原版 16 项显示模式、128 个音效通道和主线程内存规格。PE 未检出显示表时保留资源指纹配置。保留图形文本归一化中越界整数的原有载荷，更新上游指令数量回归，并增加有界的 CBG_MT 分块图片解码及原创回归夹具。
 6. `0007-bgi-audio-recovery.patch` 让 Android CPAL 后端合并 Oboe 关闭前后的重复错误回调，避免 Kira 单槽错误队列溢出，保留混音器重建输出，失败时每 250ms 重试。声音控制入口清理已结束的静态与流式播放句柄，防止渐变轮询塞满已停止消费的命令队列。回归覆盖终态控制与重新播放。
+7. `0008-bgi-render-scheduler-performance.patch` 修复现代 BP 内联复制经 `VmMemory::DerefMut` 将整个 12 MiB 局部窗口标脏的问题，仅登记复制目标。线程交接交换并复用大小缓冲区，避免复制后反复扩缩容。脏区间超过 16 段时合并最小相邻间隙，维持高位稀疏写入的覆盖。图形路径为整数采样和整数单位仿射提供像素等价的快速分支，双线性插值以整数权重保留旧浮点公式的结果。
 
 历史补丁 `0004-virtual-user-file-reads.patch` 仅用于旧基线；新版上游已实现虚拟根与存档读取映射，不再应用该补丁。
 
@@ -22,6 +23,7 @@ git apply /path/to/TyranorNext/tools/ethornell/patches/0003-public-storage-ofd-w
 git apply /path/to/TyranorNext/tools/ethornell/patches/0005-amachoco-graph-startup-compat.patch
 git apply /path/to/TyranorNext/tools/ethornell/patches/0006-bgi-version-compat.patch
 git apply /path/to/TyranorNext/tools/ethornell/patches/0007-bgi-audio-recovery.patch
+git apply /path/to/TyranorNext/tools/ethornell/patches/0008-bgi-render-scheduler-performance.patch
 cargo test -p ethornell-app --locked
 cargo test -p ethornell-image --locked
 cargo test -p ethornell-script --locked
@@ -60,3 +62,13 @@ python3 tools/ethornell/verify_provenance.py --local-static \
 本阶段运行库 SHA-256 为 `772ba49fefe70a7408accf446b57f5c0d2d9b226666047f254efbb6b58def4f0`，26,760,992 字节，来源清单为 409 项。Android ARM64 构建和测试 APK 内实际库字节校验通过。
 
 在 iQOO 12（vivo V2307A，Android 15 / API 35）上，历史候选 `0fa9e6be…` 的 Full HD 样本两次触发 AAudio 断连，输出依次重建并继续对白。候选 `772ba49f…` 在《一夜之后》越过原队列满位置。已结束静态与流式句柄的宿主回归移除修复后均失败，恢复修复后通过。本阶段重建的运行库与候选 `772ba49f…` 字节一致。两次系统断连恢复的直接证据来自先行候选 `0fa9e6be…`，本库此前的两次锁屏未再次触发系统断连。详见 [Issue #176](https://github.com/Weiss-UltimateSavior/Tyranor-Next/issues/176)。
+
+## 2026-11-15 性能候选验证
+
+当前运行库 SHA-256 为 `dd1b2e94b13bf78ada765a6710c7dfce216783dce93a5b50d9828909df9dd2f0`，26,766,176 字节。按上述顺序在固定上游提交重放七份补丁后，409 项源码哈希均与构建时记录一致，沿用原产物。生产产物已移除计时与原始错误输出插桩。设备为 iQOO 12（vivo V2307A，Android 15 / API 35）。测试 APK 基于 1.65 替换运行库资产。最终整数插值库在《一夜之后》完成标题、姓名确认及正文进入，进程存活且未见原生失败日志。前一零权重候选还复查了 Cinderella 和 Pure HD 的标题及正文，最终库尚待复查这两个样本。
+
+在《一夜之后》体验版以临时计时库测量每 60 帧的处理耗时。基线 `b39d76e5…` 已包含整数图形快速分支，仍使用旧线程交接；零权重优化阶段的计时库为 `b2af41a1…`，最终整数插值计时库为 `a291a19d…`。基线静态标题每帧约 25–26ms，其中线程交接约 24ms。大小窗口交替时，最高 12 MiB 缓冲反复扩缩容，保存缓冲的再次复制及容量处理每 60 帧约 1.1s。内联复制经 `DerefMut` 造成全窗口标脏的调用位置实测为 `modern_bp.rs` 的 `copy_within`。
+
+零权重优化阶段计时中，静态阶段单帧处理约 6–11ms。重动态开场的连续采样窗口由基线每帧约 359–398ms 降至约 263–268ms，仍有明显卡顿。该场景目标读取效果的 CPU 合成约 139–146ms，其中仿射合成约 73–76ms；多层背景另占约 49–51ms，GPU 提交约 1ms。上述数字是引擎内部处理时间，实际显示帧率和输入到显示延迟须单独测量。场景时间随交互和帧处理推进，采样窗口未逐帧锁定。后续将双线性 1/16 权重改为与旧浮点公式精确等价的整数累加，最终计时中的仿射合成为约 67–69ms，重动态连续窗口仍约 260–275ms。
+
+纯源码宿主回归合计 974 通过、13 忽略、0 失败，分别为 App 537、VM 361、音频 21、图片 26、脚本 29。新增用例覆盖缓冲复用、脏区间溢出、重叠与跨区域复制、清零隔离、仿射边界及旧采样公式对照，经过两个独立 Agent 审核。来源工具在 WSL 下 80 通过。生产库及测试 APK 的 `--local-static`、16KB zipalign、签名校验通过，严格来源与逐字节重建验收仍待完成。

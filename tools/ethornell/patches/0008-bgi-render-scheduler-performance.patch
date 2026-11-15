@@ -1,0 +1,649 @@
+diff --git a/crates/ethornell-app/src/native_background_effect.rs b/crates/ethornell-app/src/native_background_effect.rs
+--- a/crates/ethornell-app/src/native_background_effect.rs
++++ b/crates/ethornell-app/src/native_background_effect.rs
+@@ -568,6 +568,9 @@
+         source.rgba[i..i + 4].try_into().unwrap()
+     };
+     let a = pixel(x, y);
++    if fx == 0 && fy == 0 {
++        return a;
++    }
+     let b = pixel(x + 1, y);
+     let c = pixel(x, y + 1);
+     let d = pixel(x + 1, y + 1);
+@@ -584,6 +587,52 @@
+ #[cfg(test)]
+ mod tests {
+     use super::*;
++
++    #[test]
++    fn background_sampler_matches_integer_interpolation_at_edges() {
++        let source = DecodedImage {
++            width: 3,
++            height: 2,
++            rgba: (0..24).map(|i| ((i * 73 + 19) % 256) as u8).collect(),
++        };
++        let reference = |x: i32, y: i32, fx: i32, fy: i32, denominator: i32| {
++            let pixel = |x: i32, y: i32| -> [u8; 4] {
++                if x < 0 || y < 0 || x >= source.width as i32 || y >= source.height as i32 {
++                    return [0; 4];
++                }
++                let offset = (y as usize * source.width as usize + x as usize) * 4;
++                source.rgba[offset..offset + 4].try_into().unwrap()
++            };
++            let a = pixel(x, y);
++            let b = pixel(x + 1, y);
++            let c = pixel(x, y + 1);
++            let d = pixel(x + 1, y + 1);
++            let shift = denominator.trailing_zeros();
++            std::array::from_fn(|i| {
++                let top = i32::from(b[i])
++                    + ((i32::from(a[i]) - i32::from(b[i])) * (denominator - fx) >> shift);
++                let bottom = i32::from(d[i])
++                    + ((i32::from(c[i]) - i32::from(d[i])) * (denominator - fx) >> shift);
++                (bottom + ((top - bottom) * (denominator - fy) >> shift)).clamp(0, 255) as u8
++            })
++        };
++        for denominator in [4, 8, 16, 128, 256] {
++            for fx in [0, 1, denominator / 2, denominator - 1] {
++                for fy in [0, 1, denominator / 2, denominator - 1] {
++                    for y in -2..=source.height as i32 + 1 {
++                        for x in -2..=source.width as i32 + 1 {
++                            assert_eq!(
++                                sample_background_pixel(&source, x, y, fx, fy, denominator),
++                                reference(x, y, fx, fy, denominator),
++                                "position=({x},{y}) fraction=({fx},{fy}) denominator={denominator}"
++                            );
++                        }
++                    }
++                }
++            }
++        }
++    }
++
+     #[test]
+     fn background_families_materialize_and_keep_effect_alpha_separate() {
+         let manager = ResourceManager::open_game(env!("CARGO_MANIFEST_DIR")).unwrap();
+diff --git a/crates/ethornell-app/src/native_effector.rs b/crates/ethornell-app/src/native_effector.rs
+--- a/crates/ethornell-app/src/native_effector.rs
++++ b/crates/ethornell-app/src/native_effector.rs
+@@ -385,6 +385,39 @@
+         (-reverse.cos() * sx * 65536.) as i64 as i32,
+         (reverse.sin() * sy * 65536.) as i64 as i32,
+     ];
++    // At integer unit steps the scalar sampler is an exact row copy. Keep
++    // the general path when its fixed-point additions would wrap or clamp.
++    let origin_x = start[0] >> 16;
++    let origin_y = start[1] >> 16;
++    if dx == [65536, 0]
++        && dy == [0, 65536]
++        && (start[0] | start[1]) & 65535 == 0
++        && source.width <= i32::MAX as u32
++        && source.height <= i32::MAX as u32
++        && out.width <= 32767
++        && out.height <= 32767
++        && i64::from(origin_x) + i64::from(out.width) - 1 <= 32767
++        && i64::from(origin_y) + i64::from(out.height) - 1 <= 32767
++    {
++        let left = (-i64::from(origin_x)).max(0).min(i64::from(out.width)) as usize;
++        let top = (-i64::from(origin_y)).max(0).min(i64::from(out.height)) as usize;
++        let right = (i64::from(source.width) - i64::from(origin_x))
++            .clamp(0, i64::from(out.width)) as usize;
++        let bottom = (i64::from(source.height) - i64::from(origin_y))
++            .clamp(0, i64::from(out.height)) as usize;
++        if right > left && bottom > top {
++            let byte_len = (right - left) * 4;
++            let source_x = (i64::from(origin_x) + left as i64) as usize;
++            for y in top..bottom {
++                let source_y = (i64::from(origin_y) + y as i64) as usize;
++                let source_offset = (source_y * source.width as usize + source_x) * 4;
++                let output_offset = (y * out.width as usize + left) * 4;
++                out.rgba[output_offset..output_offset + byte_len]
++                    .copy_from_slice(&source.rgba[source_offset..source_offset + byte_len]);
++            }
++        }
++        return out;
++    }
+     for y in 0..out.height {
+         for x in 0..out.width {
+             let fx = start[0]
+@@ -424,6 +457,138 @@
+ mod tests {
+     use super::*;
+     use ethornell_vm::{NativeCallFrame, NativeOpcode, Value};
++
++    fn integer_translation_reference(
++        source: &DecodedImage,
++        size: [u32; 2],
++        origin: [i32; 2],
++    ) -> DecodedImage {
++        let mut out = crate::native_map_filter::blank(size[0], size[1]);
++        for y in 0..size[1] {
++            for x in 0..size[0] {
++                let sx = (origin[0]
++                    .wrapping_shl(16)
++                    .wrapping_add((x as i32).wrapping_shl(16))
++                    >> 16)
++                    .clamp(-32768, 32767);
++                let sy = (origin[1]
++                    .wrapping_shl(16)
++                    .wrapping_add((y as i32).wrapping_shl(16))
++                    >> 16)
++                    .clamp(-32768, 32767);
++                let color = crate::native_background_effect::sample_background_pixel(
++                    source, sx, sy, 0, 0, 16,
++                );
++                let offset = ((y * size[0] + x) * 4) as usize;
++                out.rgba[offset..offset + 4].copy_from_slice(&color);
++            }
++        }
++        out
++    }
++
++    #[test]
++    fn integer_affine_copy_matches_scalar_sampling_and_clipping() {
++        for [width, height] in [[0, 0], [0, 2], [3, 0], [3, 2], [4, 3]] {
++            let source = DecodedImage {
++                width,
++                height,
++                rgba: (0..width * height * 4)
++                    .map(|i| ((i * 73 + 19) % 256) as u8)
++                    .collect(),
++            };
++            for size in [[0, 0], [0, 2], [3, 0], [1, 1], [3, 2], [4, 3], [7, 6]] {
++                for origin_x in [-5, -1, 0, 2, 4] {
++                    for origin_y in [-4, -1, 0, 1, 3] {
++                        let expected =
++                            integer_translation_reference(&source, size, [origin_x, origin_y]);
++                        for bilinear in [false, true] {
++                            assert_eq!(
++                                native_inverse_affine(
++                                    &source,
++                                    size,
++                                    [2 << 16, 3 << 16],
++                                    [
++                                        (origin_x + 2) << 16,
++                                        (origin_y + 3) << 16,
++                                        0,
++                                        65536,
++                                        65536,
++                                    ],
++                                    bilinear,
++                                ),
++                                expected,
++                                "source={width}x{height} size={size:?} origin=({origin_x},{origin_y}) bilinear={bilinear}"
++                            );
++                        }
++                    }
++                }
++            }
++        }
++    }
++
++    #[test]
++    fn integer_affine_copy_preserves_signed_source_dimension_checks() {
++        for [width, height] in [[i32::MAX as u32 + 1, 1], [1, i32::MAX as u32 + 1]] {
++            let source = DecodedImage {
++                width,
++                height,
++                rgba: Vec::new(),
++            };
++            let size = [2, 2];
++            let expected = integer_translation_reference(&source, size, [0, 0]);
++            for bilinear in [false, true] {
++                assert_eq!(
++                    native_inverse_affine(
++                        &source,
++                        size,
++                        [0, 0],
++                        [0, 0, 0, 65536, 65536],
++                        bilinear,
++                    ),
++                    expected,
++                );
++            }
++        }
++    }
++
++    #[test]
++    fn integer_affine_copy_preserves_fixed_point_wrap_at_signed_boundary() {
++        for (source_size, size, origin) in [
++            ([32768, 1], [2, 1], [32767, 0]),
++            ([1, 32768], [1, 2], [0, 32767]),
++            ([3, 1], [32768, 1], [-32768, 0]),
++            ([1, 3], [1, 32768], [0, -32768]),
++        ] {
++            let source = DecodedImage {
++                width: source_size[0],
++                height: source_size[1],
++                rgba: (0..source_size[0] * source_size[1] * 4)
++                    .map(|i| ((i * 73 + 19) % 256) as u8)
++                    .collect(),
++            };
++            let expected = integer_translation_reference(&source, size, origin);
++            for bilinear in [false, true] {
++                assert_eq!(
++                    native_inverse_affine(
++                        &source,
++                        size,
++                        [0, 0],
++                        [
++                            origin[0].wrapping_shl(16),
++                            origin[1].wrapping_shl(16),
++                            0,
++                            65536,
++                            65536,
++                        ],
++                        bilinear,
++                    ),
++                    expected,
++                    "source={source_size:?} size={size:?} origin={origin:?} bilinear={bilinear}"
++                );
++            }
++        }
++    }
++
+     #[test]
+     fn modern_gradient_modes_follow_axis_edge_and_sse_rounding() {
+         let mut source = DecodedImage { width: 3, height: 3, rgba: vec![0; 36] };
+diff --git a/crates/ethornell-app/src/snapshot.rs b/crates/ethornell-app/src/snapshot.rs
+--- a/crates/ethornell-app/src/snapshot.rs
++++ b/crates/ethornell-app/src/snapshot.rs
+@@ -1890,20 +1890,31 @@
+     let y0 = y.floor() as i32;
+     // sub_417C50 uses the high four bits of each 16-bit fractional word for
+     // its MMX interpolation table. Quantize to the same 1/16 steps.
+-    let fx = ((x - x.floor()) * 16.0).floor().clamp(0.0, 15.0) / 16.0;
+-    let fy = ((y - y.floor()) * 16.0).floor().clamp(0.0, 15.0) / 16.0;
++    let fx = ((x - x.floor()) * 16.0).floor().clamp(0.0, 15.0);
++    let fy = ((y - y.floor()) * 16.0).floor().clamp(0.0, 15.0);
+     let p00 = source_pixel_or_zero(src, x0, y0);
++    // A nonzero first sample already guarantees Some, and zero weights
++    // make the other three samples irrelevant to every output channel.
++    if fx == 0.0 && fy == 0.0 && p00 != [0; 4] {
++        return Some(p00);
++    }
+     let p10 = source_pixel_or_zero(src, x0 + 1, y0);
+     let p01 = source_pixel_or_zero(src, x0, y0 + 1);
+     let p11 = source_pixel_or_zero(src, x0 + 1, y0 + 1);
+     if p00 == [0; 4] && p10 == [0; 4] && p01 == [0; 4] && p11 == [0; 4] {
+         return None;
+     }
++    if fx.is_nan() || fy.is_nan() {
++        return Some([0; 4]);
++    }
++    let (fx, fy) = (fx as u32, fy as u32);
+     let mut out = [0u8; 4];
+     for channel in 0..4 {
+-        let top = p00[channel] as f32 * (1.0 - fx) + p10[channel] as f32 * fx;
+-        let bottom = p01[channel] as f32 * (1.0 - fx) + p11[channel] as f32 * fx;
+-        out[channel] = (top * (1.0 - fy) + bottom * fy).floor().clamp(0.0, 255.0) as u8;
++        // All original weights are exact binary fractions. The numerator
++        // is at most 255 * 256, so this preserves its final floor exactly.
++        let top = u32::from(p00[channel]) * (16 - fx) + u32::from(p10[channel]) * fx;
++        let bottom = u32::from(p01[channel]) * (16 - fx) + u32::from(p11[channel]) * fx;
++        out[channel] = ((top * (16 - fy) + bottom * fy) >> 8) as u8;
+     }
+     Some(out)
+ }
+@@ -2204,6 +2215,73 @@
+     }
+ 
+     #[test]
++    fn mode5_bilinear_integer_weights_match_four_neighbor_float_sampling() {
++        let reference = |src: &DecodedImage, x: f32, y: f32| {
++            let x0 = x.floor() as i32;
++            let y0 = y.floor() as i32;
++            let fx = ((x - x.floor()) * 16.0).floor().clamp(0.0, 15.0) / 16.0;
++            let fy = ((y - y.floor()) * 16.0).floor().clamp(0.0, 15.0) / 16.0;
++            let p00 = super::source_pixel_or_zero(src, x0, y0);
++            let p10 = super::source_pixel_or_zero(src, x0 + 1, y0);
++            let p01 = super::source_pixel_or_zero(src, x0, y0 + 1);
++            let p11 = super::source_pixel_or_zero(src, x0 + 1, y0 + 1);
++            if p00 == [0; 4] && p10 == [0; 4] && p01 == [0; 4] && p11 == [0; 4] {
++                return None;
++            }
++            Some(std::array::from_fn(|channel| {
++                let top = p00[channel] as f32 * (1.0 - fx) + p10[channel] as f32 * fx;
++                let bottom = p01[channel] as f32 * (1.0 - fx) + p11[channel] as f32 * fx;
++                (top * (1.0 - fy) + bottom * fy).floor().clamp(0.0, 255.0) as u8
++            }))
++        };
++        let mixed = DecodedImage {
++            width: 4,
++            height: 3,
++            rgba: (0u8..12)
++                .flat_map(|index| match index % 4 {
++                    0 => [0; 4],
++                    1 => [index * 19, 255, 1, 0],
++                    2 => [0, 0, 0, 255],
++                    _ => [255, index * 17, 127, 128],
++                })
++                .collect(),
++        };
++        assert_eq!(super::sample_mode5_bilinear(&mixed, 0.0, 0.0), Some([0; 4]));
++        assert_eq!(super::sample_mode5_bilinear(&pixel(0, 0, 0, 0), 0.0, 0.0), None);
++        for source in [
++            mixed,
++            pixel(0, 0, 0, 0),
++            DecodedImage { width: 0, height: 0, rgba: Vec::new() },
++        ] {
++            for (x, y) in [
++                (f32::NAN, 0.0),
++                (0.0, f32::NAN),
++                (0.0, f32::NEG_INFINITY),
++            ] {
++                assert_eq!(
++                    super::sample_mode5_bilinear(&source, x, y),
++                    reference(&source, x, y),
++                );
++            }
++            for y in -2..=3 {
++                for x in -2..=4 {
++                    for fx in 0..64 {
++                        for fy in 0..64 {
++                            let sx = x as f32 + fx as f32 / 64.0;
++                            let sy = y as f32 + fy as f32 / 64.0;
++                            assert_eq!(
++                                super::sample_mode5_bilinear(&source, sx, sy),
++                                reference(&source, sx, sy),
++                                "position=({sx},{sy})"
++                            );
++                        }
++                    }
++                }
++            }
++        }
++    }
++
++    #[test]
+     fn integer_copy_matches_pixel_reference_with_crop_clip_and_source_alpha() {
+         let source = DecodedImage {
+             width: 7, height: 5,
+diff --git a/crates/ethornell-vm/src/local_window.rs b/crates/ethornell-vm/src/local_window.rs
+--- a/crates/ethornell-vm/src/local_window.rs
++++ b/crates/ethornell-vm/src/local_window.rs
+@@ -70,7 +70,21 @@
+         }
+         if first == last {
+             if self.len == MAX_REGION_SPANS {
+-                *self = Self::prefix(self.end().max(end));
++                // Keep the fixed-size representation sparse when another
++                // disjoint write arrives. Cover only the smallest extra gap.
++                let mut expanded = [[0; 2]; MAX_REGION_SPANS + 1];
++                expanded[..first].copy_from_slice(&self.ranges[..first]);
++                expanded[first] = [start, end];
++                expanded[first + 1..].copy_from_slice(&self.ranges[first..]);
++                let merge = expanded
++                    .windows(2)
++                    .enumerate()
++                    .min_by_key(|(_, pair)| pair[1][0] - pair[0][1])
++                    .map(|(index, _)| index)
++                    .unwrap();
++                self.ranges[..merge].copy_from_slice(&expanded[..merge]);
++                self.ranges[merge] = [expanded[merge][0], expanded[merge + 1][1]];
++                self.ranges[merge + 1..].copy_from_slice(&expanded[merge + 2..]);
+                 return;
+             }
+             if first < self.len {
+@@ -166,6 +180,16 @@
+     }
+ }
+ impl VmMemory {
++    pub fn copy_within(&mut self, source: std::ops::Range<usize>, destination: usize) {
++        let count = source.len();
++        self.bytes.copy_within(source, destination);
++        if count != 0 {
++            // IndexMut tracks only the destination after the slice operation
++            // has validated its bounds and completed the overlapping copy.
++            let _ = &mut self[destination..destination + count];
++        }
++    }
++
+     pub fn resize(&mut self, len: usize, value: u8) {
+         let old_len = self.bytes.len();
+         if len != old_len
+@@ -436,8 +460,8 @@
+             assert_zero_outside_spans(&live[REGION_BYTES..], &self.code_spans);
+         }
+ 
+-        self.bytes.clear();
+-        self.bytes.extend_from_slice(scratch);
++        std::mem::swap(&mut self.bytes, scratch);
++        scratch.clear();
+         self.data_len = data_len;
+         self.data_spans = outgoing[0];
+         self.code_spans = outgoing[1];
+@@ -534,6 +558,105 @@
+     use super::*;
+ 
+     #[test]
++    fn copy_within_tracks_only_the_high_local_destination() {
++        let mut memory = VmMemory::from_zeroed(vec![0; super::super::INITIAL_MEMORY_SIZE]);
++        let base = super::super::LOCAL_MEMORY_BASE as usize;
++        let source = base + REGION_BYTES + 32;
++        let destination = base + REGION_BYTES - 16;
++        memory.bytes[source..source + 4].copy_from_slice(b"copy");
++        memory.copy_within(source..source + 4, destination);
++        assert_eq!(&memory[destination..destination + 4], b"copy");
++        assert_eq!(&memory[source..source + 4], b"copy");
++        assert_eq!(
++            memory.local_spans()[0].as_slice(),
++            &[[REGION_BYTES - 16, REGION_BYTES - 12]]
++        );
++        assert_eq!(memory.local_spans()[1], RegionSpans::default());
++    }
++
++    #[test]
++    fn copy_within_global_and_heap_destinations_leave_local_spans_clean() {
++        let mut memory = VmMemory::from_zeroed(vec![0; super::super::INITIAL_MEMORY_SIZE]);
++        let base = super::super::LOCAL_MEMORY_BASE as usize;
++        let heap = super::super::HEAP_MEMORY_BASE;
++        memory.bytes[base + 16..base + 20].copy_from_slice(b"data");
++        memory.copy_within(base + 16..base + 20, 64);
++        memory.copy_within(64..68, heap + 64);
++        memory.copy_within(heap + 64..heap + 68, 128);
++        assert_eq!(&memory[64..68], b"data");
++        assert_eq!(&memory[heap + 64..heap + 68], b"data");
++        assert_eq!(&memory[128..132], b"data");
++        assert_eq!(memory.local_spans(), [RegionSpans::default(); 2]);
++        assert_eq!(memory.local_bounds(), [0, 0]);
++    }
++
++    #[test]
++    fn copy_within_matches_memmove_for_both_overlap_directions() {
++        let base = super::super::LOCAL_MEMORY_BASE as usize;
++        for (source, destination) in [(base + 8..base + 20, base + 12),
++                                      (base + 12..base + 24, base + 8),
++                                      (base + 8..base + 20, base + 8)] {
++            let mut memory = VmMemory::from_zeroed(vec![0; super::super::INITIAL_MEMORY_SIZE]);
++            for (index, byte) in memory.bytes[base..base + 32].iter_mut().enumerate() {
++                *byte = index as u8;
++            }
++            let mut expected = memory.bytes.clone();
++            expected.copy_within(source.clone(), destination);
++            memory.copy_within(source, destination);
++            assert_eq!(memory.bytes, expected);
++            assert_eq!(
++                memory.local_spans()[0].as_slice(),
++                &[[destination - base, destination - base + 12]]
++            );
++            assert_eq!(memory.local_spans()[1], RegionSpans::default());
++        }
++    }
++
++    #[test]
++    fn copy_within_tracks_each_crossed_local_region_boundary() {
++        let base = super::super::LOCAL_MEMORY_BASE as usize;
++        for (destination, data, code) in [
++            (base - 2, vec![[0, 2]], vec![]),
++            (base + REGION_BYTES - 2, vec![[REGION_BYTES - 2, REGION_BYTES]], vec![[0, 2]]),
++            (base + WINDOW_BYTES - 2, vec![], vec![[CODE_BYTES - 2, CODE_BYTES]]),
++        ] {
++            let mut memory = VmMemory::from_zeroed(vec![0; super::super::INITIAL_MEMORY_SIZE]);
++            memory.bytes[..4].copy_from_slice(b"edge");
++            memory.copy_within(0..4, destination);
++            assert_eq!(&memory[destination..destination + 4], b"edge");
++            assert_eq!(memory.local_spans()[0].as_slice(), data);
++            assert_eq!(memory.local_spans()[1].as_slice(), code);
++        }
++    }
++
++    #[test]
++    fn copy_within_empty_and_invalid_ranges_preserve_tracking_and_bytes() {
++        let mut memory = VmMemory::from_zeroed(vec![0; super::super::INITIAL_MEMORY_SIZE]);
++        let base = super::super::LOCAL_MEMORY_BASE as usize;
++        let len = memory.len();
++        memory.copy_within(0..0, base + 100);
++        memory.copy_within(len..len, len);
++        assert_eq!(memory.local_spans(), [RegionSpans::default(); 2]);
++        assert_eq!(memory.local_bounds(), [0, 0]);
++        let mut memory = VmMemory::from_zeroed((0..64).collect());
++        for (source, destination) in [
++            (8..4, 0),
++            (60..65, 0),
++            (0..4, 61),
++            (65..65, 0),
++            (0..0, 65),
++        ] {
++            let before = memory.bytes.clone();
++            assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
++                memory.copy_within(source, destination);
++            })).is_err());
++            assert_eq!(memory.bytes, before);
++            assert_eq!(memory.local_spans(), [RegionSpans::default(); 2]);
++            assert_eq!(memory.local_bounds(), [0, 0]);
++        }
++    }
++
++    #[test]
+     fn indexed_writes_bound_scans_and_unrestricted_mutation_invalidates_bounds() {
+         let mut live = VmMemory::from(vec![0; super::super::INITIAL_MEMORY_SIZE]);
+         live.set_local_bounds([0, 0]);
+@@ -643,12 +766,73 @@
+     }
+ 
+     #[test]
+-    fn span_overflow_falls_back_to_a_safe_prefix() {
++    fn span_overflow_merges_the_smallest_gap_at_any_insertion_position() {
++        let base = REGION_BYTES - 4096;
++        let mut ranges = (0..=MAX_REGION_SPANS)
++            .map(|index| [base + index * 64, base + index * 64 + 4])
++            .collect::<Vec<_>>();
++        // Give the closest pair a unique gap, away from the region's start.
++        ranges[8] = [ranges[7][1] + 1, ranges[7][1] + 5];
++        for last in 0..ranges.len() {
++            let mut spans = RegionSpans::default();
++            for (index, &[start, end]) in ranges.iter().enumerate() {
++                if index != last {
++                    spans.insert(start, end, REGION_BYTES);
++                }
++            }
++            spans.insert(ranges[last][0], ranges[last][1], REGION_BYTES);
++            let mut expected = ranges.clone();
++            expected[7][1] = expected.remove(8)[1];
++            assert_eq!(spans.as_slice(), expected.as_slice(), "last={last}");
++            assert_eq!(spans.byte_len(), 17 * 4 + 1);
++            spans.insert(base + 1, base + 2, REGION_BYTES);
++            assert_eq!(spans.as_slice(), expected.as_slice());
++        }
++    }
++
++    #[test]
++    fn span_overflow_breaks_equal_gap_ties_by_address() {
++        let base = REGION_BYTES - 4096;
+         let mut spans = RegionSpans::default();
+         for index in 0..=MAX_REGION_SPANS {
+-            spans.insert(index * 2, index * 2 + 1, REGION_BYTES);
+-        }
+-        assert_eq!(spans.as_slice(), &[[0, MAX_REGION_SPANS * 2 + 1]]);
++            spans.insert(base + index * 2, base + index * 2 + 1, REGION_BYTES);
++        }
++        assert_eq!(spans.len, MAX_REGION_SPANS);
++        assert_eq!(spans.as_slice()[0], [base, base + 3]);
++        assert_eq!(spans.byte_len(), MAX_REGION_SPANS + 2);
++    }
++
++    #[test]
++    fn high_sparse_span_overflow_round_trips_and_keeps_cleared_bytes_isolated() {
++        let mut live = VmMemory::from_zeroed(vec![0; super::super::INITIAL_MEMORY_SIZE]);
++        let base = super::super::LOCAL_MEMORY_BASE as usize;
++        for index in 0..=MAX_REGION_SPANS {
++            live[base + REGION_BYTES - 4096 + index * 64] = index as u8 + 1;
++            live[base + WINDOW_BYTES - 4096 + index * 64] = index as u8 + 32;
++        }
++        // Cleared bytes remain covered, so a later exchange cannot expose
++        // another thread's previous value at the same address.
++        live[base + REGION_BYTES - 4096 + 8 * 64] = 0;
++        let original = live[base..base + WINDOW_BYTES].to_vec();
++        let mut saved = LocalWindow::default();
++        let mut scratch = Vec::new();
++        let outgoing = live.local_spans();
++        let incoming = saved.spans();
++        saved.exchange_spanned(&mut live[base..base + WINDOW_BYTES], &mut scratch, outgoing);
++        live.set_local_spans(incoming);
++        assert!(saved.bytes.len() < 256);
++        assert!(live[base..base + WINDOW_BYTES].iter().all(|&byte| byte == 0));
++
++        live[base + REGION_BYTES - 4096 + 8 * 64] = 255;
++        live[base + 12] = 111;
++        let other = live[base..base + WINDOW_BYTES].to_vec();
++        for expected in [&original, &other, &original, &other] {
++            let outgoing = live.local_spans();
++            let incoming = saved.spans();
++            saved.exchange_spanned(&mut live[base..base + WINDOW_BYTES], &mut scratch, outgoing);
++            live.set_local_spans(incoming);
++            assert_eq!(&live[base..base + WINDOW_BYTES], expected.as_slice());
++        }
+     }
+     #[test]
+     fn idle_window_keeps_both_regions_and_cleared_tails() {
+@@ -673,6 +857,48 @@
+         assert_eq!(window.bytes, [1]);
+         window.restore(&mut restored);
+         assert_eq!(original, restored);
++    }
++
++    #[test]
++    fn alternating_large_and_small_windows_reuse_their_exchange_buffers() {
++        let mut small = vec![0; WINDOW_BYTES];
++        for (index, byte) in small[..16].iter_mut().enumerate() {
++            *byte = if index % 2 == 0 { 0 } else { index as u8 };
++        }
++        let large = vec![0xA5; WINDOW_BYTES];
++        let mut live = large.clone();
++        let mut saved = LocalWindow {
++            bytes: small[..16].to_vec(),
++            data_len: 16,
++            data_spans: RegionSpans::prefix(16),
++            code_spans: RegionSpans::default(),
++        };
++        let mut scratch = Vec::with_capacity(WINDOW_BYTES);
++        let small_pointer = saved.bytes.as_ptr();
++        let large_pointer = scratch.as_ptr();
++        let small_capacity = saved.bytes.capacity();
++        let large_capacity = scratch.capacity();
++        let mut outgoing = [
++            RegionSpans::full(REGION_BYTES),
++            RegionSpans::full(CODE_BYTES),
++        ];
++        for index in 0..6 {
++            let incoming = saved.spans();
++            saved.exchange_spanned(&mut live, &mut scratch, outgoing);
++            outgoing = incoming;
++            let (expected, saved_pointer, scratch_pointer, saved_capacity, scratch_capacity) =
++                if index % 2 == 0 {
++                    (&small, large_pointer, small_pointer, large_capacity, small_capacity)
++                } else {
++                    (&large, small_pointer, large_pointer, small_capacity, large_capacity)
++                };
++            assert_eq!(&live, expected);
++            assert_eq!(saved.bytes.as_ptr(), saved_pointer);
++            assert_eq!(scratch.as_ptr(), scratch_pointer);
++            assert_eq!(saved.bytes.capacity(), saved_capacity);
++            assert_eq!(scratch.capacity(), scratch_capacity);
++            assert!(scratch.is_empty());
++        }
+     }
+ 
+     #[test]

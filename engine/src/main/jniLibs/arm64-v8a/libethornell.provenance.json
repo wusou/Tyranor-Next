@@ -76,10 +76,25 @@
         "crates/ethornell-audio/src/android.rs": "efbb8079ae1954bc1873b0d4d81568fa376871da3c6cb7361efa0d31393670a6"
       },
       "applies_after": "tools/ethornell/patches/0006-bgi-version-compat.patch"
+    },
+    {
+      "path": "tools/ethornell/patches/0008-bgi-render-scheduler-performance.patch",
+      "sha256": "01136c49bfac762d4fda66170383979bdeacd64398698bafde51b5fad815c0f4",
+      "target_source_file": "crates/ethornell-vm/src/local_window.rs",
+      "target_file_sha256": "c36b844a085b54bef18a91a4833c1349b83f3865b84d9653c749254c62c61f3d",
+      "base_revision": "a6c925e566f6bc1f7d60ab31afaec1d04dbfa8ab",
+      "reason": "Track local writes to copy_within destinations, reuse local-window buffers, merge the nearest dirty-range gap, and preserve pixel results with integer sampling, affine row copies, and integer mode5 bilinear interpolation.",
+      "target_source_file_sha256": {
+        "crates/ethornell-app/src/native_background_effect.rs": "e68abb9370c904c3502dc95cbf3920a77a72bd9743231c7c5cc65f574ae3b2b9",
+        "crates/ethornell-app/src/native_effector.rs": "2e92dccf5fce0209915777de2001d72c9841284502a695cfb402bb07e421d104",
+        "crates/ethornell-app/src/snapshot.rs": "461ec07339de83856cd73968565a3a71c400a3d3125de992195deb764bc545fc",
+        "crates/ethornell-vm/src/local_window.rs": "c36b844a085b54bef18a91a4833c1349b83f3865b84d9653c749254c62c61f3d"
+      },
+      "applies_after": "tools/ethornell/patches/0007-bgi-audio-recovery.patch"
     }
   ],
   "source_inventory_policy": "cargo-workspace-build-inputs-v1",
-  "source_inventory_sha256": "56751142185c5014009b92ddaba1a2fdc0d9952104f618b873b85442b5b24912",
+  "source_inventory_sha256": "7ddb5933b3512f4f844a13372ccb074dd48f33ef1375ec2b0592a24ca4a79e64",
   "source_inventory_file_count": 409,
   "source_file_sha256": {
     ".cargo/config.toml": "6901a0456153bc20219ef29bc261424f659a68307018f289704b8129f50c0035",
@@ -134,12 +149,12 @@
     "crates/ethornell-app/src/mp4_movie.rs": "08121b7f8d8b3bb3d5ca49dc026aa111022d13e6e405965059474cc9a731145e",
     "crates/ethornell-app/src/mp4_movie/codecs.rs": "df72be3b2f8b97a129d5e6980e7f10b4361cd8d8ec7263f3f8fbb9702d953b8d",
     "crates/ethornell-app/src/native_background.rs": "75a15bc0d3db7988f32e8271125a35077fb4789b86578349553c0e5f3394c2c7",
-    "crates/ethornell-app/src/native_background_effect.rs": "3cab04962eeefb0c9e95425c6d0a0191f2ad6a3e12f951262ff146f344b347cb",
+    "crates/ethornell-app/src/native_background_effect.rs": "e68abb9370c904c3502dc95cbf3920a77a72bd9743231c7c5cc65f574ae3b2b9",
     "crates/ethornell-app/src/native_backml.rs": "97992a1b37aae28e2023d9300e2331592f2494817d2bec054ad58c7acb359345",
     "crates/ethornell-app/src/native_bitmap_transforms.rs": "854c9e723b1697e51408cb6dd1c6b0e8dbb255334088a6b663b7c6088f940925",
     "crates/ethornell-app/src/native_display.rs": "10aa1d4f28a7cfd3b007d32ef438232510a18cb51215204af9b07ba2248859e8",
     "crates/ethornell-app/src/native_effect.rs": "22985a3eab6267bd878504cdbee4a9aa7bbeb6abb394e6550254ad2bd351e8ba",
-    "crates/ethornell-app/src/native_effector.rs": "ac59fd1a52e1dfc69d3b7074b9a87fb110e7c983f0335343bda2aec7b025cdf3",
+    "crates/ethornell-app/src/native_effector.rs": "2e92dccf5fce0209915777de2001d72c9841284502a695cfb402bb07e421d104",
     "crates/ethornell-app/src/native_graph.rs": "b395b29f13548c9a35b78cea73cfce36bc562299fb48dbb0f766adc63a78fce8",
     "crates/ethornell-app/src/native_graph_ext.rs": "8b9a25bd83ddde4a16b83992ca242ce9c671f5324c551b5ab2c8c708546ade44",
     "crates/ethornell-app/src/native_graph_resource.rs": "37de1d9d28563ce7deb0f82533b9ce4e01556638b0b9d8995284fcda2391e8e8",
@@ -170,7 +185,7 @@
     "crates/ethornell-app/src/save_repro.rs": "b27168c8341f53e862784da9e1b9ebcc391719f2a3756f7c603e8a3aaec4a16e",
     "crates/ethornell-app/src/scenario.rs": "577a1ec7f721f00ee00bec7011e05353729c8a9b5b20beec2eebc7343db923d6",
     "crates/ethornell-app/src/scene.rs": "43850d799460ba61c2617f844fff88b1ff4f5af415e29951b8633e5f629f78b0",
-    "crates/ethornell-app/src/snapshot.rs": "9d9c8ff4836d350865c989c90fc7c3534f87683eff4c80a5c0b19c33d5b177a2",
+    "crates/ethornell-app/src/snapshot.rs": "461ec07339de83856cd73968565a3a71c400a3d3125de992195deb764bc545fc",
     "crates/ethornell-app/src/surface_controls.rs": "a9032545bfb735e65c8ec4159ea3dc4987a2983e3764d31c509ac555a384073c",
     "crates/ethornell-app/src/target_checks.rs": "6ed597ebd111d922f59a81026deaa877b4f513b4ba7fe428f75bb15ed62abddc",
     "crates/ethornell-app/src/text.rs": "b02609cfa5d1df2722620269e2f80a6446b26b9bc79a989f61a81813f4bf7728",
@@ -236,7 +251,7 @@
     "crates/ethornell-vm/src/host_request.rs": "845c82d5e718a960b8da5f1049ae336aac047c95ae91f7448e764137998a383d",
     "crates/ethornell-vm/src/input.rs": "cec80bf963449683be6a30bc956fd746fd40c9ea2cc487eaccd6499a8f71d757",
     "crates/ethornell-vm/src/lib.rs": "58ba8ba41e9672f2e4d927c5e3e9f53cc342c1c7af9634cc225f517ea7a5bd5e",
-    "crates/ethornell-vm/src/local_window.rs": "aebdf19f70acab872f70aeb0450f98c73995d5d4fa690bd2030e74f365061676",
+    "crates/ethornell-vm/src/local_window.rs": "c36b844a085b54bef18a91a4833c1349b83f3865b84d9653c749254c62c61f3d",
     "crates/ethornell-vm/src/logic/grid.rs": "0b11f7c3bf862ab8d3a0b0f813e1d85bb43bb5b0efb93b5010d2124041583cb0",
     "crates/ethornell-vm/src/logic/mod.rs": "9e64c7094f60105f34b746eb07b0d0bb5f5752008c2c8d2edf4ae63c6e31f798",
     "crates/ethornell-vm/src/logic/msvc_qsort.rs": "959794117dbbad415f74b857eb3b3473ecf004e441c7f1582e3a7f8d1f8d9bfe",
@@ -498,14 +513,14 @@
   "packaged_name": "libethornell.so",
   "build_command": "Windows NDK 28.0.13004108; CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=clang.exe; CC_aarch64_linux_android=aarch64-linux-android26-clang.cmd; CXX_aarch64_linux_android=aarch64-linux-android26-clang++.cmd; AR_aarch64_linux_android=llvm-ar.exe; CARGO_BUILD_JOBS=8; CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS=\"-C link-arg=--target=aarch64-linux-android26 -C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=-Wl,-z,common-page-size=16384 -C link-arg=-Wl,-z,relro -C link-arg=-Wl,-z,now -C link-arg=-Wl,--no-undefined\"; cargo +1.96.0 build -p ethornell-mobile --target aarch64-linux-android --release --locked; llvm-strip --strip-unneeded -o libethornell.so libethornell_mobile.so",
   "build_log": "build.log",
-  "build_log_sha256": "70ec66f08adae5411774fe17c1e74f75a7a721c127d26132941633f95895188c",
-  "build_time_utc": "2026-11-15T15:30:13.037381+00:00",
-  "library_sha256": "772ba49fefe70a7408accf446b57f5c0d2d9b226666047f254efbb6b58def4f0",
-  "library_bytes": 26760992,
+  "build_log_sha256": "5117f2f4d7c4a32df71a3400af88e8ef102c69a24fc4a3fd86ae685cce807f04",
+  "build_time_utc": "2026-11-15T14:29:18.237580+00:00",
+  "library_sha256": "dd1b2e94b13bf78ada765a6710c7dfce216783dce93a5b50d9828909df9dd2f0",
+  "library_bytes": 26766176,
   "build_verification": {
-    "source_state": "a6c925e566f6bc1f7d60ab31afaec1d04dbfa8ab plus 0001, 0002, 0003, 0005, 0006, 0007",
+    "source_state": "a6c925e566f6bc1f7d60ab31afaec1d04dbfa8ab plus local patches 0001-0003 and 0005-0008 (equivalent source after patch split)",
     "embedded_source_revision_verified": "a6c925e566f6bc1f7d60ab31afaec1d04dbfa8ab",
     "strict_source_verification": false,
-    "local_patches_applied": 6
+    "local_patches_applied": 7
   }
 }
